@@ -9,10 +9,16 @@ module.exports = function (grunt) {
     var config = {
         src: 'src',
         dist: 'dist',
-        temp: '.tmp'
+        temp: '.tmp',
+        data: 'data',
     };
 
+    var fs = require('fs');
     var modRewrite = require('connect-modrewrite');
+    var moment = require('moment');
+    var path = require('path');
+    var PO = require('pofile');
+    var _ = require('lodash');
 
     var connectMiddleware = function (connect, options) {
         var middlewares = [];
@@ -308,7 +314,19 @@ module.exports = function (grunt) {
                     'app/images/{,*/}*.{png,jpg,jpeg,gif}' // Images
                 ]
             }
-        }
+        },
+
+        l10n: {
+            directory: 'locale',
+            localeFile: 'LC_MESSAGES/messages.po',
+            templateFile: 'templates/LC_MESSAGES/messages.pot',
+            locales: ['en-US', 'fr'],
+            files: [
+                '<%= config.data %>/main.json',
+                '<%= config.data %>/infographics.json',
+                '<%= config.data %>/country-data.json',
+            ],
+        },
     });
 
     grunt.registerTask('default', []);
@@ -356,4 +374,96 @@ module.exports = function (grunt) {
             'notify:grunticon'
         ]);
     });
+
+    grunt.registerTask('extract', function() {
+        var l10n = grunt.config('l10n');
+        var potFile = new PO();
+        var result = null;
+
+        // Headers
+        potFile.headers = {
+            'Project-Id-Version': 'Lorax 0.1.0',
+            'POT-Creation-Date': moment().format('YYYY-MM-DD HH:mm+HHmm'),
+            'Content-Type': 'text/plain; charset=utf8',
+            'Content-Transfer-Encoding': '8bit',
+        };
+
+        l10n.files.forEach(function(filename) {
+            var string_re = /<% _\('(.+?)'\) %>/g;
+            var contents = fs.readFileSync(filename, {encoding: 'utf8'});
+            do {
+                result = string_re.exec(contents);
+                if (result !== null) {
+                    var string = result[1];
+                    var item = new PO.Item();
+                    item.msgid = string.trim().replace('\n', '');
+                    item.msgstr = [string];
+                    potFile.items.push(item);
+                }
+            } while (result !== null);
+        });
+
+        fs.writeFileSync(l10n.directory + '/' + l10n.templateFile,
+                         potFile.toString(), {encoding: 'utf8'});
+        console.log('Strings extracted successfully.');
+    });
+
+    grunt.registerTask('merge', function(create) {
+        var l10n = grunt.config('l10n');
+        var potContent = fs.readFileSync(path.join(l10n.directory, l10n.templateFile),
+                                         {encoding: 'utf8'});
+        var potFile = PO.parse(potContent);
+
+        l10n.locales.forEach(function(locale) {
+            var localeDir = locale.replace('-', '_');
+            var poFilename = path.join(l10n.directory, localeDir, l10n.localeFile);
+            var poFile = null;
+
+            try {
+                var poContent = fs.readFileSync(poFilename, {encoding: 'utf8'});
+                poFile = PO.parse(poContent);
+            } catch (err) {
+                console.log('Couldn\'t read pofile for ' + locale + ': ' + err);
+                if (create) {
+                    console.log('Creating new pofile for ' + locale);
+                    poFile = new PO();
+                    poFile.headers = _.clone(potFile.headers);
+                } else {
+                    console.log('Skipping ' + locale);
+                    return;
+                }
+            }
+
+            // Update headers
+            poFile.headers['PO-Revision-Date'] = moment().format('YYYY-MM-DD HH:mm+HHmm');
+            poFile.headers['POT-Creation-Date'] = potFile.headers['POT-Creation-Date'];
+
+            potFile.items.forEach(function(item) {
+                var matchingItem = _.find(poFile.items, function(checkItem) {
+                    return checkItem.msgid === item.msgid;
+                });
+
+                if (matchingItem === undefined) {
+                    poFile.items.push(item);
+                }
+            });
+
+            mkPath(path.dirname(poFilename));
+            fs.writeFileSync(poFilename, poFile.toString());
+        });
+
+        console.log('Strings merged successfully.');
+    });
+
+    function mkPath(directory_path) {
+        var currentPath = '';
+        var parts = directory_path.split(path.sep);
+        parts.forEach(function(entry) {
+            var newCurrentPath = path.join(currentPath, entry);
+            if (!fs.existsSync(newCurrentPath)) {
+                fs.mkdirSync(newCurrentPath);
+            }
+            currentPath = newCurrentPath;
+        });
+    }
 };
