@@ -18,6 +18,7 @@ module.exports = function (grunt) {
     var moment = require('moment');
     var path = require('path');
     var PO = require('pofile');
+    var sh = require('execSync');
     var _ = require('lodash');
 
     var connectMiddleware = function (connect, options) {
@@ -389,7 +390,7 @@ module.exports = function (grunt) {
         };
 
         l10n.files.forEach(function(filename) {
-            var string_re = /<% _\('(.+?)'\) %>/g;
+            var string_re = /<% _\(['"](.+?)['"]\) %>/g;
             var contents = fs.readFileSync(filename, {encoding: 'utf8'});
             do {
                 result = string_re.exec(contents);
@@ -403,56 +404,54 @@ module.exports = function (grunt) {
             } while (result !== null);
         });
 
-        fs.writeFileSync(l10n.directory + '/' + l10n.templateFile,
-                         potFile.toString(), {encoding: 'utf8'});
+        var potFilename = l10n.directory + '/' + l10n.templateFile;
+        mkPath(path.dirname(potFilename));
+        fs.writeFileSync(potFilename, potFile.toString(), {encoding: 'utf8'});
         console.log('Strings extracted successfully.');
     });
 
-    grunt.registerTask('merge', function(create) {
+    grunt.registerTask('merge', function() {
         var l10n = grunt.config('l10n');
-        var potContent = fs.readFileSync(path.join(l10n.directory, l10n.templateFile),
-                                         {encoding: 'utf8'});
-        var potFile = PO.parse(potContent);
+        var potFilename = path.join(l10n.directory, l10n.templateFile);
+        if (!fs.existsSync(potFilename)) {
+            console.error('POT file not found, please run grunt extract first!');
+            return;
+        }
 
         l10n.locales.forEach(function(locale) {
-            var localeDir = locale.replace('-', '_');
-            var poFilename = path.join(l10n.directory, localeDir, l10n.localeFile);
-            var poFile = null;
+            var result = null;
+            var gnuLocale = locale.replace('-', '_');
+            var poFilename = path.join(l10n.directory, gnuLocale, l10n.localeFile);
 
-            try {
-                var poContent = fs.readFileSync(poFilename, {encoding: 'utf8'});
-                poFile = PO.parse(poContent);
-            } catch (err) {
-                console.log('Couldn\'t read pofile for ' + locale + ': ' + err);
-                if (create) {
-                    console.log('Creating new pofile for ' + locale);
-                    poFile = new PO();
-                    poFile.headers = _.clone(potFile.headers);
-                } else {
-                    console.log('Skipping ' + locale);
+            if (!fs.existsSync(poFilename)) {
+                console.log('File not found for locale ' + locale + ', creating it...');
+                mkPath(path.dirname(poFilename));
+                result = sh.exec([
+                    'msginit',
+                    '--no-translator',
+                    '-i', potFilename,
+                    '-o ' + poFilename
+                ].join(' '));
+                if (result.code) {
+                    console.error('Non-zero return code from msginit: ' + result.stdout);
                     return;
                 }
             }
 
-            // Update headers
-            poFile.headers['PO-Revision-Date'] = moment().format('YYYY-MM-DD HH:mm+HHmm');
-            poFile.headers['POT-Creation-Date'] = potFile.headers['POT-Creation-Date'];
-
-            potFile.items.forEach(function(item) {
-                var matchingItem = _.find(poFile.items, function(checkItem) {
-                    return checkItem.msgid === item.msgid;
-                });
-
-                if (matchingItem === undefined) {
-                    poFile.items.push(item);
-                }
-            });
-
-            mkPath(path.dirname(poFilename));
-            fs.writeFileSync(poFilename, poFile.toString());
+            result = sh.exec([
+                'msgmerge',
+                '-U',
+                '--lang=' + gnuLocale,
+                poFilename,
+                potFilename
+            ].join(' '));
+            if (result.code) {
+                console.error('Non-zero return code from msgmerge: ' + result.stdout);
+                return;
+            }
         });
 
-        console.log('Strings merged successfully.');
+        console.log('Strings merged.');
     });
 
     function mkPath(directory_path) {
