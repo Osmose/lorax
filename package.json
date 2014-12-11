@@ -21,8 +21,8 @@
     "grunt-notify": "~0.3.1",
     "grunt-svgmin": "~2.0.0",
     "grunt-usemin": "~2.4.0",
+    "jed": "1.0.2",
     "load-grunt-tasks": "~0.6.0",
-    "moment": "^2.8.4",
-    "pofile": "^0.2.12"
+    "po2json": "^0.3.2"
   }
 }

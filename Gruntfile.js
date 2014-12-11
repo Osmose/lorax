@@ -1,25 +1,25 @@
+/* jshint node: true */
 'use strict';
+
+var fs = require('fs');
+var Jed = require('jed');
+var modRewrite = require('connect-modrewrite');
+var path = require('path');
+var po2json = require('po2json');
+var sh = require('execSync');
 
 module.exports = function (grunt) {
 
     // load all grunt tasks matching the `grunt-*` pattern
     require('load-grunt-tasks')(grunt);
+    grunt.loadNpmTasks('grunt-debug-task');
 
     // Configurable paths
     var config = {
         src: 'src',
         dist: 'dist',
         temp: '.tmp',
-        data: 'data',
     };
-
-    var fs = require('fs');
-    var modRewrite = require('connect-modrewrite');
-    var moment = require('moment');
-    var path = require('path');
-    var PO = require('pofile');
-    var sh = require('execSync');
-    var _ = require('lodash');
 
     var connectMiddleware = function (connect, options) {
         var middlewares = [];
@@ -322,10 +322,12 @@ module.exports = function (grunt) {
             localeFile: 'LC_MESSAGES/messages.po',
             templateFile: 'templates/LC_MESSAGES/messages.pot',
             locales: ['en-US', 'fr'],
+            srcDirectory: 'data',
+            distDirectory: '<%= config.dist %>/data/i18n',
             files: [
-                '<%= config.data %>/main.json',
-                '<%= config.data %>/infographics.json',
-                '<%= config.data %>/country-data.json',
+                {src: 'main.js', dist: 'main.json'},
+                //'<%= config.data %>/infographics.json',
+                //'<%= config.data %>/country-data.json',
             ],
         },
     });
@@ -344,7 +346,7 @@ module.exports = function (grunt) {
             'less:server',
             'connect:server',
             'notify:server',
-            'watch'
+            'watch',
         ]);
     });
 
@@ -362,7 +364,8 @@ module.exports = function (grunt) {
             'requirejs',
             'concat',
             'uglify:dist',
-            'usemin'
+            'usemin',
+            'generateJSON',
         ]);
     });
 
@@ -378,36 +381,31 @@ module.exports = function (grunt) {
 
     grunt.registerTask('extract', function() {
         var l10n = grunt.config('l10n');
-        var potFile = new PO();
+        var potFilename = l10n.directory + '/' + l10n.templateFile;
         var result = null;
 
-        // Headers
-        potFile.headers = {
-            'Project-Id-Version': 'Lorax 0.1.0',
-            'POT-Creation-Date': moment().format('YYYY-MM-DD HH:mm+HHmm'),
-            'Content-Type': 'text/plain; charset=utf8',
-            'Content-Transfer-Encoding': '8bit',
-        };
-
-        l10n.files.forEach(function(filename) {
-            var string_re = /<% _\(['"](.+?)['"]\) %>/g;
-            var contents = fs.readFileSync(filename, {encoding: 'utf8'});
-            do {
-                result = string_re.exec(contents);
-                if (result !== null) {
-                    var string = result[1];
-                    var item = new PO.Item();
-                    item.msgid = string.trim().replace('\n', '');
-                    item.msgstr = [string];
-                    potFile.items.push(item);
-                }
-            } while (result !== null);
-        });
-
-        var potFilename = l10n.directory + '/' + l10n.templateFile;
         mkPath(path.dirname(potFilename));
-        fs.writeFileSync(potFilename, potFile.toString(), {encoding: 'utf8'});
-        console.log('Strings extracted successfully.');
+
+        var first = true;
+        l10n.files.forEach(function(file) {
+            result = sh.exec([
+                'xgettext',
+                '-o', potFilename,
+                !first ? '-j' : '',
+                '-L', 'JavaScript',
+                '--from-code=UTF-8',
+                '--add-comments=L10n',
+                '--package-name=Lorax',
+                '--package-version=0.1.0',
+                path.join(l10n.srcDirectory, file.src),
+            ].join(' '));
+
+            if (result.code) {
+                console.error('Error extracting strings from ' + file.src + ': ' + result.stdout);
+            } else {
+                first = false;
+            }
+        });
     });
 
     grunt.registerTask('merge', function() {
@@ -420,8 +418,7 @@ module.exports = function (grunt) {
 
         l10n.locales.forEach(function(locale) {
             var result = null;
-            var gnuLocale = locale.replace('-', '_');
-            var poFilename = path.join(l10n.directory, gnuLocale, l10n.localeFile);
+            var poFilename = path.join(l10n.directory, gnuLocale(locale), l10n.localeFile);
 
             if (!fs.existsSync(poFilename)) {
                 console.log('File not found for locale ' + locale + ', creating it...');
@@ -441,7 +438,7 @@ module.exports = function (grunt) {
             result = sh.exec([
                 'msgmerge',
                 '-U',
-                '--lang=' + gnuLocale,
+                '--lang=' + gnuLocale(locale),
                 poFilename,
                 potFilename
             ].join(' '));
@@ -450,9 +447,33 @@ module.exports = function (grunt) {
                 return;
             }
         });
-
-        console.log('Strings merged.');
     });
+
+    grunt.registerTask('generateJSON', function() {
+        var l10n = grunt.config('l10n');
+
+        l10n.locales.forEach(function(locale) {
+            var poFilename = path.join(l10n.directory, gnuLocale(locale), l10n.localeFile);
+            if (!fs.existsSync(poFilename)) {
+                console.log('File not found for locale ' + locale + ', ignoring...');
+                return;
+            }
+
+            var i18n = new Jed(po2json.parseFileSync(poFilename, {format: 'jed'}));
+            l10n.files.forEach(function(file) {
+                var srcFilename = path.join(l10n.srcDirectory, file.src);
+                var translatedJSON = require('./' + srcFilename)(i18n);
+
+                var destFilename = path.join(l10n.distDirectory, locale, file.dist);
+                mkPath(path.dirname(destFilename));
+                fs.writeFileSync(destFilename, JSON.stringify(translatedJSON));
+            });
+        });
+    });
+
+    function gnuLocale(locale) {
+        return locale.replace('-', '_');
+    }
 
     function mkPath(directory_path) {
         var currentPath = '';
