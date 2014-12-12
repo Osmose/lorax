@@ -14,7 +14,6 @@ define([
 
     var dataService = function ($http, $q) {
 
-        this._defaultLocale = 'en-US';
         this._$http = $http;
         this._$q = $q;
         this._mainData, this._requestingMain, this._mainDefer;
@@ -28,20 +27,18 @@ define([
             ].join('/');
         }
 
-        function _buildLocaleMainEndpoint(locale) {
+        function _buildMainEndpoint() {
             return [
                 '/data',
                 'i18n',
-                locale,
                 'main.json'
             ].join('/');
         }
 
-        function _buildInfographicEndpoint(locale) {
+        function _buildInfographicEndpoint() {
             return [
                 '/data',
                 'i18n',
-                locale,
                 'infographics.json'
             ].join('/');
         }
@@ -54,21 +51,18 @@ define([
             ].join('/');
         }
 
-        function _buildCountryDataEndpoint(locale) {
+        function _buildCountryDataEndpoint() {
             return [
                 '/data',
                 'i18n',
-                locale,
                 'country-data.json'
             ].join('/');
         }
 
         /**
          * @method core/services/dataService~getMain
-         * @param locale {String} Locale code
          */
-        function getMain(locale) {
-            locale = locale || this._defaultLocale;
+        function getMain() {
 
             if (!this._mainData) {
                 if (this._requestingMain) {
@@ -79,15 +73,15 @@ define([
                 this._mainDefer = this._$q.defer();
 
                 var req = this._$http.get(_buildMainEndpoint());
-                var localeReq = this._$http.get(_buildLocaleMainEndpoint(locale));
-                var infographicReq = this._$http.get(_buildInfographicEndpoint(locale));
+                var mainReq = this._$http.get(_buildMainEndpoint());
+                var infographicReq = this._$http.get(_buildInfographicEndpoint());
 
                 req.then(function (res) {
                     if (res.data) {
-                        localeReq.then(function (localeRes) {
-                            if (localeRes.data) {
+                        mainReq.then(function (mainRes) {
+                            if (mainRes.data) {
                                 infographicReq.then(function (infographicRes) {
-                                    this._mainData = new MainModel(res.data, localeRes.data, infographicRes.data);
+                                    this._mainData = new MainModel(res.data, mainRes.data, infographicRes.data);
                                     this._mainDefer.resolve(this._mainData);
                                 }.bind(this));
                             }
@@ -103,9 +97,7 @@ define([
             return this._mainDefer.promise;
         }
 
-        function getMap(locale) {
-            locale = locale || this._defaultLocale;
-
+        function getMap() {
             if (!this._mapData) {
                 if (this._requestingMap) {
                     return this._mapDefer.promise;
@@ -115,7 +107,7 @@ define([
                 this._mapDefer = this._$q.defer();
 
                 var req = this._$http.get(_buildMapEndpoint());
-                var countryReq = this._$http.get(_buildCountryDataEndpoint(locale));
+                var countryReq = this._$http.get(_buildCountryDataEndpoint());
 
                 req.then(function (res) {
                     if ( res.data ) {
