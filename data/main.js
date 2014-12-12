@@ -485,7 +485,7 @@ module.exports = function(i18n) {
             ]
           },
           "cloudSecurity": {
-            "name": "Cloud Security",
+            "name": _("Cloud Security"),
             "title": "Don’t put all your nude pictures in one basket.",
             "narrative": "Celebrities got a rude awakening in September 2014 when their iCloud accounts were hacked, and their personal photos were broadcast over Twitter. The rest of us might want to think twice about what we store in the cloud. Services like Apple’s iCloud, Google Drive and Dropbox make attractive targets for hackers, housing data from millions of users.",
             "mozActionCopy": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus maximus imperdiet sem et dapibus. Duis quam ante, vestibulum in lectus.",

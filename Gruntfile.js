@@ -326,8 +326,8 @@ module.exports = function (grunt) {
             distDirectory: '<%= config.dist %>/data/i18n',
             files: [
                 {src: 'main.js', dist: 'main.json'},
-                //'<%= config.data %>/infographics.json',
-                //'<%= config.data %>/country-data.json',
+                {src: 'infographics.js', dist: 'infographics.json'},
+                {src: 'country-data.js', dist: 'country-data.json'},
             ],
         },
     });
